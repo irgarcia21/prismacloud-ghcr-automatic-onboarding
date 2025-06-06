@@ -6,7 +6,8 @@ This Python application lists the GitHub Container Registries (GHCR) for a speci
 
 - Fetch GHCR details for a specific GitHub organization.
 - Limit the number of registries returned.
-- Onboard GHCR registries to Prisma Cloud
+- Onboard GHCR registries to Prisma Cloud.
+- Offboard all GHCR registries in Prisma Cloud.
 - Debug logging for troubleshooting and development purposes.
 
 ## Prerequisites
@@ -41,3 +42,6 @@ Run the script from the command line, providing the necessary arguments:
 python main.py -o <OrganizationName> -t <GHCRTokenName> -l <Limit> --debug
 ```
 
+```bash
+python main.py --clean
+```

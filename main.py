@@ -1,4 +1,5 @@
 __author__ = "Simon Melotte"
+# Modified by Irene Garcia (2025-06-06) for adding cleaning functionality
 
 import os
 import json
@@ -208,6 +209,7 @@ def main():
     parser.add_argument("-t", "--ghcr-token-name", help="Github Token Name in Prisma Cloud")
     parser.add_argument("-l", "--limit", help="Github Token Name in Prisma Cloud", default=0)
     parser.add_argument("--debug", action="store_true", help="Enable debug logging.")
+    parser.add_argument("--clean", action="store_true", help="If specified, removes all Github container registries from Prisma Cloud Compute.")
     args = parser.parse_args()
 
     if args.debug:
@@ -234,21 +236,6 @@ def main():
     identity = os.environ.get("PRISMA_ACCESS_KEY")
     secret = os.environ.get("PRISMA_SECRET_KEY")
     github_token = os.environ.get("GITHUB_TOKEN")
-    ghcr_orgamization = args.organization
-    ghcr_token_name = args.ghcr_token_name
-    limit = args.limit
-
-    if not url or not identity or not secret or not github_token:
-        logger.error("PRISMA_API_URL, PRISMA_ACCESS_KEY, PRISMA_SECRET_KEY, GITHUB_TOKEN variables are not set.")
-        return
-
-    if not ghcr_orgamization:
-        logger.error("GitHub organization name is required. Use --organization to specify it.")
-        return
-
-    if not ghcr_token_name:
-        logger.error("GitHub Token name is required. Use --ghcr-token-name to specify it.")
-        return
 
     token = login_saas(url, identity, secret)
     compute_url = get_compute_url(url, token)
@@ -258,20 +245,63 @@ def main():
     if token is None:
         logger.error("Unable to authenticate.")
         return
-    
-    try:
-        limit = int(limit)  # Convert limit to an integer
-    except ValueError:
-        raise ValueError("Limit must be a valid integer.")
-
-    gh_registries = list_ghcr_images(ghcr_orgamization, github_token, limit)
-
-    set_github_pat_token(compute_url, compute_token, github_token, ghcr_token_name)
-
+        
     container_registries_list_from_cwp = get_container_registries(compute_url, compute_token)
-    add_container_registries(
-        compute_url, compute_token, container_registries_list_from_cwp, gh_registries, ghcr_orgamization, ghcr_token_name
-    )
+
+    if args.clean:
+        logger.info("Cleaning all Github container registries (registry == 'ghcr.io').")
+        original_count = len(container_registries_list_from_cwp.get("specifications", []))
+        container_registries_list_from_cwp["specifications"] = [
+            reg
+            for reg in container_registries_list_from_cwp.get("specifications", [])
+            if reg.get("registry") != "ghcr.io"
+        ]
+        cleaned_count = len(container_registries_list_from_cwp["specifications"])
+        logger.info(f"Number of Github registries to be removed: {original_count - cleaned_count}")
+
+        # Update the registry list on Prisma Cloud Compute with the removal
+        registry_url = f"{compute_url}/api/v1/settings/registry?project=Central+Console&scanLater=false"
+        headers = {
+            "content-type": "application/json; charset=UTF-8",
+            "Authorization": "Bearer " + compute_token,
+        }
+        try:
+            response = requests.put(registry_url, headers=headers, data=json.dumps(container_registries_list_from_cwp))
+            response.raise_for_status()
+            logger.info("Successfully removed all Github container registries.")
+        except requests.exceptions.RequestException as err:
+            logger.error("An exception occurred during the clean step:", err)
+            return
+
+    else:
+        ghcr_organization = args.organization
+        ghcr_token_name = args.ghcr_token_name
+        limit = args.limit
+
+        if not url or not identity or not secret or not github_token:
+            logger.error("PRISMA_API_URL, PRISMA_ACCESS_KEY, PRISMA_SECRET_KEY, GITHUB_TOKEN variables are not set.")
+            return
+
+        if not ghcr_organization:
+            logger.error("GitHub organization name is required. Use --organization to specify it.")
+            return
+
+        if not ghcr_token_name:
+            logger.error("GitHub Token name is required. Use --ghcr-token-name to specify it.")
+            return
+        
+        try:
+            limit = int(limit)  # Convert limit to an integer
+        except ValueError:
+            raise ValueError("Limit must be a valid integer.")
+        
+        gh_registries = list_ghcr_images(ghcr_organization, github_token, limit)
+
+        set_github_pat_token(compute_url, compute_token, github_token, ghcr_token_name)
+
+        add_container_registries(
+            compute_url, compute_token, container_registries_list_from_cwp, gh_registries, ghcr_organization, ghcr_token_name
+        )
 
     logger.info("======================= END =======================")
 
