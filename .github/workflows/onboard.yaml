@@ -30,4 +30,4 @@ jobs:
 
       - name: List all container registries
         run: |
-          python main.py --organization irgarcia21 --ghcr-token-name github_personal_access_token --limit 3
+          python main.py --organization irgarcia21 --ghcr-token-name GITHUB_TOKEN --limit 3
